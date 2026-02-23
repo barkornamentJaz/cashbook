@@ -221,6 +221,7 @@ hr.div{border:none;border-top:1px solid var(--border);margin:16px 0;}
   <div class="page-header">
     <div><h2>Dashboard Overview</h2><p>Bark Ornament (Pvt) Ltd — Financial Summary</p></div>
     <div class="header-actions">
+      <button class="btn btn-secondary btn-sm" onclick="loadFromSheet()" title="Fetch latest data from Google Sheet">🔄 Refresh</button>
       <button class="btn btn-gold btn-sm" onclick="openDailySummary()">📋 Daily Summary Print</button>
     </div>
   </div>
@@ -253,6 +254,7 @@ hr.div{border:none;border-top:1px solid var(--border);margin:16px 0;}
   <div class="page-header">
     <div><h2>Cash Book</h2><p>Manual entries only — Reimbursements &amp; Receipts (CR). Voucher expenses appear here automatically as DR.</p></div>
     <div class="header-actions">
+      <button class="btn btn-secondary btn-sm" onclick="loadFromSheet()" title="Fetch latest data from Google Sheet">🔄 Refresh</button>
       <button class="btn btn-gold btn-sm" onclick="printCashBook()">🖨 Print Cash Book</button>
       <button class="btn btn-secondary btn-sm" onclick="exportCBCSV()">⬇ Export CSV</button>
     </div>
@@ -324,6 +326,7 @@ hr.div{border:none;border-top:1px solid var(--border);margin:16px 0;}
   <div class="page-header">
     <div><h2>IOU Tracker</h2><p>Track money given to staff for purchases</p></div>
     <div class="header-actions">
+      <button class="btn btn-secondary btn-sm" onclick="loadFromSheet()" title="Fetch latest data from Google Sheet">🔄 Refresh</button>
       <button class="btn btn-gold btn-sm" onclick="printIOU()">🖨 Print IOU Report</button>
       <button class="btn btn-secondary btn-sm" onclick="exportIOUCSV()">⬇ Export CSV</button>
     </div>
@@ -379,6 +382,7 @@ hr.div{border:none;border-top:1px solid var(--border);margin:16px 0;}
   <div class="page-header">
     <div><h2>Physical Cash Count</h2><p>Count notes and coins to verify cash on hand</p></div>
     <div class="header-actions">
+      <button class="btn btn-secondary btn-sm" onclick="loadFromSheet()" title="Fetch latest data from Google Sheet">🔄 Refresh</button>
       <button class="btn btn-gold btn-sm" onclick="printCashCount()">🖨 Print Sheet</button>
       <button class="btn btn-green btn-sm" onclick="saveCashCount()">💾 Save Count</button>
     </div>
@@ -440,6 +444,7 @@ hr.div{border:none;border-top:1px solid var(--border);margin:16px 0;}
   <div class="page-header">
     <div><h2>Payment Vouchers</h2><p>Create and manage payment vouchers</p></div>
     <div class="header-actions">
+      <button class="btn btn-secondary btn-sm" onclick="loadFromSheet()" title="Fetch latest data from Google Sheet">🔄 Refresh</button>
       <button class="btn btn-gold btn-sm" onclick="printVoucherList()">🖨 Print Voucher List</button>
       <button class="btn btn-secondary btn-sm" onclick="exportVCSV()">⬇ Export CSV</button>
     </div>
@@ -508,6 +513,7 @@ hr.div{border:none;border-top:1px solid var(--border);margin:16px 0;}
   <div class="page-header">
     <div><h2>Monthly End Summary</h2><p>Full month-end financial report</p></div>
     <div class="header-actions">
+      <button class="btn btn-secondary btn-sm" onclick="loadFromSheet()" title="Fetch latest data from Google Sheet">🔄 Refresh</button>
       <input type="month" id="ms-month" onchange="renderMonthlySummary()" style="font-size:13px;padding:7px 11px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);">
       <button class="btn btn-gold btn-sm" onclick="printMonthlySummary()">🖨 Print Report</button>
       <button class="btn btn-secondary btn-sm" onclick="exportMonthlyCSV()">⬇ CSV</button>
@@ -669,13 +675,17 @@ function doPost(e) {
 
 function doGet(e) {
   try {
+    // Read opening balance directly from CashBook!I2
+    const cbSh = SS.getSheetByName(SH_CB);
+    const cbOpen = cbSh ? (parseFloat(cbSh.getRange('I2').getValue()) || 0) : 0;
     const result = {
       ok: true,
-      cb:       readSheet(SH_CB,       CB_FIELDS),
-      iou:      readSheet(SH_IOU,      IOU_FIELDS),
-      vouchers: readSheet(SH_VOUCHERS, V_FIELDS),
+      cbOpen:     cbOpen,
+      cb:         readSheet(SH_CB,       CB_FIELDS),
+      iou:        readSheet(SH_IOU,      IOU_FIELDS),
+      vouchers:   readSheet(SH_VOUCHERS, V_FIELDS),
       cashCounts: readCashCount(),
-      meta:     readMeta()
+      meta:       readMeta()
     };
     return respond(result);
   } catch(err) {
@@ -1058,9 +1068,9 @@ async function loadFromSheet(){
     const resp = await fetch(url + '?t=' + Date.now(), { redirect: 'follow' });
     const result = await resp.json();
     if(!result.ok) throw new Error(result.error || 'Load failed');
-    DB.cb       = result.cb       || [];
-    DB.iou      = result.iou      || [];
-    DB.vouchers = result.vouchers || [];
+    DB.cb       = (result.cb       || []).map(e=>({...e, date: normDate(e.date)}));
+    DB.iou      = (result.iou      || []).map(e=>({...e, date: normDate(e.date), returnDate: normDate(e.returnDate), settledDate: normDate(e.settledDate)}));
+    DB.vouchers = (result.vouchers || []).map(v=>({...v, date: normDate(v.date)}));
     if(result.cashCounts && Object.keys(result.cashCounts).length){
       // Restore cash count inputs from sheet
       Object.entries(result.cashCounts).forEach(([k,v])=>{
@@ -1071,7 +1081,8 @@ async function loadFromSheet(){
       updateCCBreakdown();
     }
     if(result.meta){
-      DB.cbOpen   = parseFloat(result.meta.cbOpen) || 0;
+      // cbOpen is read from CashBook!I2 directly (overrides meta if present)
+      DB.cbOpen   = (result.cbOpen !== undefined && result.cbOpen !== null) ? parseFloat(result.cbOpen) || 0 : parseFloat(result.meta.cbOpen) || 0;
       DB.lastCC   = result.meta.lastCC  || null;
       DB.ccHist   = result.meta.ccHist  || [];
     }
@@ -1324,7 +1335,23 @@ function setOpening(){
   const v=prompt('Enter opening balance (Rs):', DB.cbOpen);
   if(v===null) return;
   DB.cbOpen=parseFloat(v)||0;
-  save(); renderCBStats(); renderDash();
+  saveLocal();
+  renderCBStats(); renderDash();
+  // Push new opening balance to Google Sheet CashBook!I2
+  const url=getGSUrl();
+  if(url){
+    fetch(url,{
+      method:'POST',
+      redirect:'follow',
+      headers:{'Content-Type':'text/plain'},
+      body:JSON.stringify({action:'saveOpening', cbOpen: DB.cbOpen})
+    }).then(r=>r.json()).then(res=>{
+      if(res.saved) toast('✓ Opening balance saved to Sheet (I2)','ok');
+      else toast('⚠ Saved locally — Sheet update failed','err');
+    }).catch(()=>toast('⚠ Saved locally — Sheet update failed','err'));
+  } else {
+    toast('✓ Opening balance saved locally','ok');
+  }
 }
 
 function resetCBForm(){
@@ -1981,8 +2008,24 @@ function clearAllData(){
 // ══════════════════════════════════════════════════════
 //  UTILITIES
 // ══════════════════════════════════════════════════════
-function todayStr(){ return new Date().toISOString().split('T')[0]; }
-function fmtDate(d){ if(!d) return '—'; const[y,m,day]=d.split('-'); return day+'/'+m+'/'+y; }
+function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fmtDate(d){ if(!d) return '—'; const s=String(d).split('T')[0]; const[y,m,day]=s.split('-'); if(!y||!m||!day) return String(d); return m+'/'+day+'/'+y; }
+// Normalize any date value (ISO string, Date object, or YYYY-MM-DD) to YYYY-MM-DD
+function normDate(d){
+  if(!d) return '';
+  const s = String(d);
+  // Already YYYY-MM-DD
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // ISO datetime like 2026-02-23T08:00:00.000Z — extract date part using local offset
+  if(s.includes('T') || s.includes('Z')){
+    const dt = new Date(s);
+    if(!isNaN(dt)) return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+  }
+  // Try parsing as-is
+  const dt = new Date(s);
+  if(!isNaN(dt)) return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+  return s;
+}
 function fmt(n){ return 'Rs '+parseFloat(n||0).toLocaleString('en-LK',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtShort(n){ return parseFloat(n||0).toLocaleString('en-LK',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function delayDays(from,to){ const a=new Date(from),b=new Date(to); return Math.max(0,Math.floor((b-a)/(1000*60*60*24))); }
