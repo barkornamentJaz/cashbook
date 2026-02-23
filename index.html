@@ -229,7 +229,7 @@ hr.div{border:none;border-top:1px solid var(--border);margin:16px 0;}
     <div class="kpi green"><div class="kpi-label">Cash Book Balance</div><div class="kpi-val" id="dash-cb-balance">Rs 0.00</div><div class="kpi-sub">Opening + Receipts − Payments</div></div>
     <div class="kpi orange"><div class="kpi-label">IOU Outstanding</div><div class="kpi-val" id="dash-iou-out">Rs 0.00</div><div class="kpi-sub" id="dash-iou-count">0 pending</div></div>
     <div class="kpi blue"><div class="kpi-label">Physical Cash</div><div class="kpi-val" id="dash-phys-cash">Rs 0.00</div><div class="kpi-sub">Last count result</div></div>
-    <div class="kpi red"><div class="kpi-label">Cash Difference</div><div class="kpi-val" id="dash-diff">Rs 0.00</div><div class="kpi-sub">Book vs Physical</div></div>
+    <div class="kpi red"><div class="kpi-label">Cash Difference</div><div class="kpi-val" id="dash-diff">Rs 0.00</div><div class="kpi-sub">Book − (IOU + Physical)</div></div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
     <div class="panel">
@@ -497,7 +497,9 @@ hr.div{border:none;border-top:1px solid var(--border);margin:16px 0;}
         <div class="filter-bar" style="padding:10px 12px 0;">
           <input type="text" id="v-search" placeholder="🔍 Search..." oninput="renderVTable()">
           <select id="v-filter-cat" onchange="renderVTable()"><option value="">All Categories</option></select>
-          <input type="month" id="v-filter-month" onchange="renderVTable()">
+          <input type="date" id="v-date-from" onchange="renderVTable()" placeholder="From" title="From date" style="width:auto;">
+          <input type="date" id="v-date-to" onchange="renderVTable()" placeholder="To" title="To date" style="width:auto;">
+          <button class="btn btn-secondary btn-sm" onclick="clearVDateFilter()">✕ Clear</button>
         </div>
         <div class="table-wrap"><table>
           <thead><tr><th>Voucher #</th><th>Date</th><th>Payee</th><th>Category</th><th>Method</th><th>Amount</th><th>Actions</th></tr></thead>
@@ -1615,7 +1617,9 @@ function updateRecon(){
   const dr=_m.filter(e=>e.type==='DR').reduce((s,e)=>s+e.amount,0);
   const book=DB.cbOpen+cr-dr;
   const phys=[...NOTES,...COINS].reduce((s,d)=>s+(ccCounts[d]||0)*d,0);
-  const diff=phys-book;
+  const iouOut=DB.iou.filter(e=>e.status==='Pending').reduce((s,e)=>s+e.amount,0);
+  // Cash Difference = Cash Book Balance - (IOU Outstanding + Physical Cash)
+  const diff=book-(iouOut+phys);
   document.getElementById('recon-book').textContent=fmt(book);
   document.getElementById('recon-phys').textContent=fmt(phys);
   const diffEl=document.getElementById('recon-diff');
@@ -1772,14 +1776,21 @@ function renderVStats(){
   document.getElementById('v-month').textContent=fmt(mTot);
 }
 
+function clearVDateFilter(){
+  document.getElementById('v-date-from').value='';
+  document.getElementById('v-date-to').value='';
+  renderVTable();
+}
 function renderVTable(){
   const search=document.getElementById('v-search').value.toLowerCase();
   const cat=document.getElementById('v-filter-cat').value;
-  const month=document.getElementById('v-filter-month').value;
+  const from=document.getElementById('v-date-from').value;
+  const to=document.getElementById('v-date-to').value;
   let rows=DB.vouchers.filter(v=>
     (!search||(v.payee||'').toLowerCase().includes(search)||(v.desc||'').toLowerCase().includes(search)||(v.no||'').toLowerCase().includes(search))
     &&(!cat||v.category===cat)
-    &&(!month||v.date.startsWith(month))
+    &&(!from||v.date>=from)
+    &&(!to||v.date<=to)
   ).sort((a,b)=>b.date.localeCompare(a.date));
   const tbody=document.getElementById('v-tbody');
   if(!rows.length){tbody.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">No vouchers</td></tr>`;return;}
@@ -2269,17 +2280,19 @@ function printIOU(){
 function printVoucherList(){
   const search = document.getElementById('v-search').value.toLowerCase();
   const cat    = document.getElementById('v-filter-cat').value;
-  const month  = document.getElementById('v-filter-month').value;
+  const from   = document.getElementById('v-date-from').value;
+  const to     = document.getElementById('v-date-to').value;
 
   let rows = DB.vouchers.filter(v=>
     (!search||(v.payee||'').toLowerCase().includes(search)||(v.desc||'').toLowerCase().includes(search)||(v.no||'').toLowerCase().includes(search))
     &&(!cat||v.category===cat)
-    &&(!month||v.date.startsWith(month))
+    &&(!from||v.date>=from)
+    &&(!to||v.date<=to)
   ).sort((a,b)=>a.date.localeCompare(b.date));
 
   const total = rows.reduce((s,v)=>s+v.rupees+(v.cents||0)/100,0);
   const printTime = new Date().toLocaleString('en-LK',{dateStyle:'medium',timeStyle:'short'});
-  const monthLabel = month ? new Date(month+'-01').toLocaleDateString('en-LK',{year:'numeric',month:'long'}) : 'All Periods';
+  const monthLabel = (from||to) ? ((from?fmtDate(from):'Start')+' — '+(to?fmtDate(to):'Today')) : 'All Periods';
 
   // Category breakdown
   const catMap = {};
