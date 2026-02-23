@@ -1013,7 +1013,8 @@ async function save(){
 // ══════════════════════════════════════════════════════
 //  GOOGLE SHEETS SYNC
 // ══════════════════════════════════════════════════════
-function getGSUrl(){ return localStorage.getItem('bark_gs_url') || ''; }
+const FIXED_GS_URL = 'https://script.google.com/macros/s/AKfycbwC0qgWuJH4sinsBjTLfuomO5dHSgGQzflFRdqdNx238EiLuTCoQji-v16LB-u8reOGAg/exec';
+function getGSUrl(){ return localStorage.getItem('bark_gs_url') || FIXED_GS_URL; }
 function setGSUrl(url){ localStorage.setItem('bark_gs_url', url); }
 let lastSyncTime = null;
 let syncStatus = 'idle'; // idle | syncing | ok | error
@@ -2462,9 +2463,9 @@ document.getElementById('v-method').addEventListener('change',function(){ docume
 rebuildCatSelects();
 renderCatManager();
 
-// Init sync dot
+// Init sync dot — URL is always available (hardcoded)
 const gsUrl = getGSUrl();
-setSyncDot(gsUrl ? 'idle' : '');
+setSyncDot('idle');
 
 // Build cash count UI
 buildCashCountUI();
